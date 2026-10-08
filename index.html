@@ -130,6 +130,7 @@
 <script>
 (function () {
   'use strict';
+  var PAGE_VERSION = '913cc76ffa2f';  // filled in by tools/publish_packer.py
   var $ = function (id) { return document.getElementById(id); };
   var store = {
     get: function (k, d) { try { var v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } },
@@ -172,6 +173,14 @@
   function load() {
     return fetchDecrypt('data.bin').then(function (buf) {
       var d = JSON.parse(new TextDecoder().decode(buf));
+      // A window left open picks up a newly published page once (cache-busting query).
+      if (d.page_version && PAGE_VERSION.indexOf('__') !== 0 && d.page_version !== PAGE_VERSION) {
+        var tried = null; try { tried = sessionStorage.getItem('reload_for'); } catch (e) {}
+        if (tried !== d.page_version) {
+          try { sessionStorage.setItem('reload_for', d.page_version); } catch (e) {}
+          location.replace(location.pathname + '?v=' + d.page_version + location.hash); return;
+        }
+      }
       S.orders = d.orders; S.products = d.products || {}; S.generated = d.generated_at;
       index(); render(); focusScan();
     }).catch(function () {
