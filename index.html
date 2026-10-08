@@ -47,7 +47,6 @@
   .progress b { font-size: 22px; }
   .bar { height: 6px; width: 160px; background: var(--surface-2); border-radius: 99px; overflow: hidden; margin-top: 4px; }
   .bar i { display: block; height: 100%; background: var(--ok); width: 0; transition: width .3s; }
-  .who { border-radius: 99px; padding: 6px 12px; }
 
   #banner { grid-column: 1 / -1; display: none; margin: 0; padding: 12px 18px; border-radius: 12px; font-size: 20px;
     font-weight: 700; align-items: center; gap: 14px; flex-wrap: wrap; }
@@ -103,11 +102,6 @@
     background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 8px 30px rgba(0,0,0,.18); }
   #menu.show { display: flex; }
   #menu button { text-align: left; }
-  #modal { position: fixed; inset: 0; z-index: 30; display: none; align-items: center; justify-content: center; background: rgba(0,0,0,.45); }
-  #modal.show { display: flex; }
-  #modal .card { background: var(--surface); border-radius: 16px; padding: 24px; width: min(420px, calc(100% - 32px)); }
-  #modal input { width: 100%; font: inherit; font-size: 20px; padding: 10px 12px; margin: 12px 0; border-radius: 10px;
-    border: 1px solid var(--line); background: var(--surface-2); color: var(--text); }
   #printFrame { position: fixed; right: 0; bottom: 0; width: 0; height: 0; border: 0; }
   @media (max-width: 900px) {
     .top { grid-template-columns: 1fr; padding: 10px 16px; }
@@ -126,18 +120,12 @@
   </label>
   <div class="right">
     <div class="progress"><b id="nDone">0</b> / <span id="nAll">0</span> 已打包 <small>packed</small><div class="bar"><i id="barFill"></i></div></div>
-    <button class="who" id="who">打包员</button>
     <button id="refresh">刷新 <small>Refresh</small></button>
   </div>
   <div id="banner"></div>
 </header>
 <main id="main"><div class="empty">…</div></main>
 <div id="menu"></div>
-<div id="modal"><div class="card">
-  <div style="font-size:20px;font-weight:700">你的名字 <small>Your name</small></div>
-  <input id="nameInput" autocomplete="off" placeholder="例如 小李">
-  <button class="primary" id="nameOk" style="width:100%;padding:12px;font-size:17px">确定 <small>OK</small></button>
-</div></div>
 <iframe id="printFrame" title="labels"></iframe>
 <script>
 (function () {
@@ -148,7 +136,7 @@
     set: function (k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
   };
   var S = { key: null, orders: [], products: {}, packed: store.get('packed', {}), active: store.get('active', null),
-            name: store.get('packer', ''), byCode: {}, ambiguous: {}, groups: [], generated: '' };
+            byCode: {}, ambiguous: {}, groups: [], generated: '' };
 
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
     return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]; }); }
@@ -231,7 +219,6 @@
     var doneAll = ready.filter(function (o) { return S.packed[o.key]; }).length;
     $('nDone').textContent = doneAll; $('nAll').textContent = ready.length;
     $('barFill').style.width = (ready.length ? doneAll * 100 / ready.length : 0) + '%';
-    $('who').innerHTML = '打包员 <b>' + esc(S.name || '—') + '</b>';
 
     var open = S.groups.filter(function (g) { return remaining(g).length; });
     var closed = S.groups.filter(function (g) { return !remaining(g).length; });
@@ -257,7 +244,7 @@
       html += '<details><summary>今日已打包 ' + packedToday.length + ' <small>Packed today</small></summary><div class="rows">' +
         packedToday.sort(function (a, b) { return S.packed[a.key].at < S.packed[b.key].at ? 1 : -1; }).map(function (o) {
           return '<div class="row"><b>' + esc(o.order_no) + '</b><span class="grow">' + esc(o.title_zh) + (o.colour ? ' · ' + esc(o.colour.zh) : '') +
-            ' <small>' + esc(o.country) + '</small></span><small>✓ ' + esc(S.packed[o.key].by) + ' ' + esc(S.packed[o.key].at.slice(11)) +
+            ' <small>' + esc(o.country) + '</small></span><small>✓ ' + esc(S.packed[o.key].at.slice(11)) +
             '</small><button data-reprint="' + esc(o.key) + '">重打面单 <small>Reprint</small></button><button data-undo="' + esc(o.key) + '">撤销 <small>Undo</small></button></div>';
         }).join('') + '</div></details>';
     }
@@ -346,7 +333,7 @@
     $('scan').value = '';
     if (!o) { banner('bad', '✕ 找不到这个条码', 'Not found: ' + esc(raw.trim()) + ' — 请扫描面单上的条码 · scan the label barcode'); sound.bad(); return; }
     if (S.packed[o.key]) {
-      banner('warn', '⚠ ' + esc(o.order_no) + ' 已经打包过', 'Already packed by ' + esc(S.packed[o.key].by) + ' ' + esc(S.packed[o.key].at.slice(11)));
+      banner('warn', '⚠ ' + esc(o.order_no) + ' 已经打包过', 'Already packed at ' + esc(S.packed[o.key].at.slice(11)));
       sound.warn(); return;
     }
     if (S.active && o.group !== S.active) {
@@ -359,8 +346,7 @@
     markPacked(o);
   }
   function markPacked(o) {
-    if (!S.name) { askName(function () { markPacked(o); }); return; }
-    S.packed[o.key] = {at: now(), by: S.name}; store.set('packed', S.packed);
+    S.packed[o.key] = {at: now()}; store.set('packed', S.packed);
     var g = S.groups.filter(function (x) { return x.key === o.group; })[0];
     var left = g ? remaining(g).length : 0;
     if (g && !left && S.active === g.key) setActive(null);
@@ -373,15 +359,6 @@
   function undo(key) {
     delete S.packed[key]; store.set('packed', S.packed); render();
     banner('info', '已撤销 · Undone'); focusScan();
-  }
-
-  // ---------- packer name ----------
-  var afterName;
-  function askName(then) { afterName = then; $('nameInput').value = S.name; $('modal').className = 'show'; $('nameInput').focus(); }
-  function saveName() {
-    var v = $('nameInput').value.trim(); if (!v) return;
-    S.name = v; store.set('packer', v); $('modal').className = ''; render(); focusScan();
-    if (afterName) { var f = afterName; afterName = null; f(); }
   }
 
   // ---------- small menu for an order chip ----------
@@ -397,7 +374,7 @@
   }
   function closeMenu() { $('menu').className = ''; }
 
-  function focusScan() { if (!$('modal').className) $('scan').focus(); }
+  function focusScan() { $('scan').focus(); }
 
   // ---------- events ----------
   var scan = $('scan'), composing = false;
@@ -425,12 +402,9 @@
       else if (t.dataset.force) { closeMenu(); var f = S.orders.filter(function (x) { return x.key === t.dataset.force; })[0]; if (f) markPacked(f); }
       else if (t.dataset.goto) { var el = document.getElementById('g-' + encodeURIComponent(t.dataset.goto)); if (el) el.scrollIntoView({behavior: 'smooth', block: 'start'}); }
       else if (t.id === 'refresh') load();
-      else if (t.id === 'who') { askName(null); return; }
-      else if (t.id === 'nameOk') { saveName(); return; }
     }
     if (!e.target.closest('input, summary')) focusScan();
   });
-  $('nameInput').addEventListener('keydown', function (e) { if (e.key === 'Enter') saveName(); });
   window.addEventListener('focus', focusScan);
   document.addEventListener('keydown', function (e) {
     // Any typing outside an input goes to the scan box, so a scan is never lost.
@@ -441,7 +415,7 @@
   });
 
   if (!window.crypto || !crypto.subtle) { $('main').innerHTML = '<div class="empty">请使用最新版 Chrome<br><small>Please use a recent Chrome</small></div>'; return; }
-  getKey().then(function (k) { S.key = k; return load(); }).then(function () { if (!S.name) askName(null); })
+  getKey().then(function (k) { S.key = k; return load(); })
     .catch(function () { $('main').innerHTML = '<div class="empty">链接无效<br><small>Link not valid</small></div>'; });
   setInterval(function () { if (!document.hidden && S.key) load(); }, 300000);
 })();
