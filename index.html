@@ -1,12 +1,12 @@
 <!DOCTYPE html>
-<html lang="zh-CN" translate="no">
+<html lang="en" translate="no">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="google" content="notranslate">
 <meta name="robots" content="noindex, nofollow">
 <meta name="referrer" content="no-referrer">
-<title>打包 Packing</title>
+<title>Packing</title>
 <style>
   :root {
     --bg: #f4f4f1; --surface: #ffffff; --surface-2: #efefea; --line: #e2e2dc;
@@ -43,6 +43,7 @@
   .scan input { flex: 1; border: 0; outline: 0; background: transparent; color: var(--text); font-size: 20px;
     padding: 6px 0; min-width: 0; font-family: ui-monospace, Consolas, monospace; letter-spacing: .5px; }
   .right { display: flex; align-items: center; gap: 14px; white-space: nowrap; }
+  #lang { border-radius: 99px; padding: 6px 12px; font-weight: 700; }
   .progress { text-align: right; }
   .progress b { font-size: 22px; }
   .bar { height: 6px; width: 160px; background: var(--surface-2); border-radius: 99px; overflow: hidden; margin-top: 4px; }
@@ -113,14 +114,15 @@
 </head>
 <body>
 <header class="top">
-  <div class="brand">打包 <small>Packing</small></div>
-  <label class="scan" title="扫描面单条码">
+  <div class="brand" id="brand"></div>
+  <label class="scan">
     <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 8v8M11 8v8M15 8v8M18 8v8"/></svg>
-    <input id="scan" autocomplete="off" spellcheck="false" placeholder="扫描面单条码  ·  Scan label barcode">
+    <input id="scan" autocomplete="off" spellcheck="false">
   </label>
   <div class="right">
-    <div class="progress"><b id="nDone">0</b> / <span id="nAll">0</span> 已打包 <small>packed</small><div class="bar"><i id="barFill"></i></div></div>
-    <button id="refresh">刷新 <small>Refresh</small></button>
+    <div class="progress"><b id="nDone">0</b> / <span id="nAll">0</span> <span id="packedWord"></span><div class="bar"><i id="barFill"></i></div></div>
+    <button id="refresh"></button>
+    <button id="lang"></button>
   </div>
   <div id="banner"></div>
 </header>
@@ -130,14 +132,60 @@
 <script>
 (function () {
   'use strict';
-  var PAGE_VERSION = '913cc76ffa2f';  // filled in by tools/publish_packer.py
+  var PAGE_VERSION = '382a3f5a8316';  // filled in by tools/publish_packer.py
   var $ = function (id) { return document.getElementById(id); };
   var store = {
     get: function (k, d) { try { var v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } },
     set: function (k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
   };
   var S = { key: null, orders: [], products: {}, packed: store.get('packed', {}), active: store.get('active', null),
-            byCode: {}, ambiguous: {}, groups: [], generated: '' };
+            byCode: {}, ambiguous: {}, groups: [], generated: '', lang: store.get('lang', 'en') };
+
+  // ---------- language: English by default, 中文 on request (remembered on this PC) ----------
+  var TEXT = {
+    en: {brand: 'Packing', scan: 'Scan label barcode', packed: 'packed', refresh: 'Refresh', other: '中文',
+      pick: 'Pick list — bring these to the table', pack: 'Pack — for each group: print labels → pack → stick label → scan it',
+      allDone: '✓ Everything is packed', nothing: 'Nothing to pack', packedToday: 'Packed today', reprint: 'Reprint label',
+      undo: 'Undo', waiting: 'Waiting for label — cannot be packed yet', inBox: 'In the box', perOrder: '×{n} per order',
+      toPack: 'to pack', print: 'Print {n} labels', preparing: 'Preparing {n} labels…',
+      sent: 'Sent {n} labels to the printer', sentSub: 'Pack, stick the label, scan it.',
+      loadFail: 'Could not load the labels', loadFailSub: 'Press Refresh and try again.',
+      notFound: '✕ Barcode not found', notFoundSub: '{c} — scan the barcode on the label',
+      already: '⚠ {o} was already packed', alreadySub: 'Packed at {t}',
+      wrong: '✕ This label is not for this group — check the parcel', wrongSub: 'Label {o} is for: {g}. Current group: {c}',
+      anyway: 'Mark packed anyway', packedMsg: '✓ {o} packed', groupDone: ' · group done!', left: ' · {n} left in this group',
+      undone: 'Undone', reprinted: 'Label reprinted for {o}', markBroken: 'Mark packed (barcode unreadable)', undoPacked: 'Undo packed',
+      ime: 'Chinese keyboard is on', imeSub: 'Press Shift to switch to English, then scan again.',
+      bad: 'Link not valid or data unreadable', noKey: 'Link not valid', chrome: 'Please use a recent version of Chrome'},
+    zh: {brand: '打包', scan: '扫描面单条码', packed: '已打包', refresh: '刷新', other: 'EN',
+      pick: '拣货单 — 先把这些拿到桌上', pack: '打包 — 每组：打印面单 → 装箱 → 贴面单 → 扫描',
+      allDone: '✓ 全部打包完成', nothing: '没有待打包的订单', packedToday: '今日已打包', reprint: '重打面单',
+      undo: '撤销', waiting: '等待面单 — 暂时不能打包', inBox: '箱内', perOrder: '每单 ×{n}',
+      toPack: '待打包', print: '打印本组面单 {n} 张', preparing: '正在准备 {n} 张面单…',
+      sent: '已发送 {n} 张面单到打印机', sentSub: '装箱 → 贴面单 → 扫描',
+      loadFail: '面单读取失败', loadFailSub: '请点刷新再试。',
+      notFound: '✕ 找不到这个条码', notFoundSub: '{c} — 请扫描面单上的条码',
+      already: '⚠ {o} 已经打包过', alreadySub: '打包时间 {t}',
+      wrong: '✕ 面单不属于当前组！请检查包裹', wrongSub: '面单 {o} 属于：{g}。当前组：{c}',
+      anyway: '仍标记已打包', packedMsg: '✓ {o} 已打包', groupDone: ' · 本组完成！', left: ' · 本组还剩 {n}',
+      undone: '已撤销', reprinted: '已重打 {o} 的面单', markBroken: '标记已打包（条码坏了）', undoPacked: '撤销打包',
+      ime: '请切换到英文输入法', imeSub: '按 Shift 切换后再扫描。',
+      bad: '链接无效或数据无法读取', noKey: '链接无效', chrome: '请使用最新版 Chrome'}
+  };
+  function t(k, vars) {
+    var s = (TEXT[S.lang] || TEXT.en)[k] || TEXT.en[k] || k;
+    return s.replace(/\{(\w)\}/g, function (_, v) { return vars && vars[v] != null ? vars[v] : ''; });
+  }
+  function zh() { return S.lang === 'zh'; }
+  function title(x) { return zh() ? x.title_zh : x.title_en; }
+  function colourName(c) { return c ? (zh() ? c.zh : c.en) : ''; }
+  function fullTitle(x) { return title(x) + (x.colour ? ' · ' + colourName(x.colour) : ''); }
+  function staticText() {
+    document.documentElement.lang = zh() ? 'zh-CN' : 'en';
+    document.title = t('brand');
+    $('brand').textContent = t('brand'); $('scan').placeholder = t('scan'); $('packedWord').textContent = t('packed');
+    $('refresh').textContent = t('refresh'); $('lang').textContent = t('other');
+  }
 
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
     return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]; }); }
@@ -151,9 +199,9 @@
     try {
       audio = audio || new (window.AudioContext || window.webkitAudioContext)();
       for (var i = 0; i < (times || 1); i++) {
-        var o = audio.createOscillator(), g = audio.createGain(), t = audio.currentTime + i * (ms + 60) / 1000;
+        var o = audio.createOscillator(), g = audio.createGain(), at = audio.currentTime + i * (ms + 60) / 1000;
         o.frequency.value = freq; o.type = 'square'; g.gain.value = 0.08;
-        o.connect(g); g.connect(audio.destination); o.start(t); o.stop(t + ms / 1000);
+        o.connect(g); g.connect(audio.destination); o.start(at); o.stop(at + ms / 1000);
       }
     } catch (e) {}
   }
@@ -184,7 +232,7 @@
       S.orders = d.orders; S.products = d.products || {}; S.generated = d.generated_at;
       index(); render(); focusScan();
     }).catch(function () {
-      $('main').innerHTML = '<div class="empty">链接无效或数据无法读取<br><small>Link not valid or data unreadable</small></div>';
+      $('main').innerHTML = '<div class="empty">' + esc(t('bad')) + '</div>';
     });
   }
   function index() {
@@ -208,21 +256,27 @@
   }
   function remaining(g) { return g.orders.filter(function (o) { return !S.packed[o.key]; }); }
   function setActive(k) { S.active = k; store.set('active', k); }
+  function groupOf(key) { return S.groups.filter(function (x) { return x.key === key; })[0]; }
+  function orderOf(key) { return S.orders.filter(function (x) { return x.key === key; })[0]; }
 
   // ---------- rendering ----------
   function photo(g) { var p = S.products[g.catalog] || {}; return p.photo || ''; }
-  function colourTag(c) { return c ? '<span class="colour"><i style="background:' + esc(c.hex) + '"></i>' + esc(c.zh) +
-    ' <small>' + esc(c.en) + '</small></span>' : ''; }
-  function unitsTag(n) { return n > 1 ? '<span class="units">每单 ×' + n + '</span>' : ''; }
+  function colourTag(c) { return c ? '<span class="colour"><i style="background:' + esc(c.hex) + '"></i>' + esc(colourName(c)) + '</span>' : ''; }
+  function unitsTag(n) { return n > 1 ? '<span class="units">' + esc(t('perOrder', {n: n})) + '</span>' : ''; }
+  function itemText(i) {
+    var name = zh() ? (i.zh || i.en) : i.en;
+    if (!zh()) name = name.charAt(0).toUpperCase() + name.slice(1);
+    var note = zh() ? i.note : i.note_en;
+    return esc(name) + (i.qty > 1 ? ' ×' + i.qty : '') + (note ? (zh() ? '（' + esc(note) + '）' : ' (' + esc(note) + ')') : '');
+  }
   function boxHtml(items) {
     if (!items || !items.length) return '';
-    return '<div class="box"><span>箱内 <small>In the box</small></span>' + items.map(function (i) {
-      if (i.none) return '<span class="item none">✕ ' + esc(i.zh) + '</span>';
-      return '<span class="item">' + esc(i.zh || i.en) + (i.qty > 1 ? ' ×' + i.qty : '') + (i.note ? '（' + esc(i.note) + '）' : '') +
-        (i.zh ? '' : '') + '</span>';
+    return '<div class="box"><span>' + esc(t('inBox')) + '</span>' + items.map(function (i) {
+      return i.none ? '<span class="item none">✕ ' + itemText(i) + '</span>' : '<span class="item">' + itemText(i) + '</span>';
     }).join('') + '</div>';
   }
   function render() {
+    staticText();
     var ready = S.orders.filter(function (o) { return o.label; });
     var waiting = S.orders.filter(function (o) { return !o.label; });
     var doneAll = ready.filter(function (o) { return S.packed[o.key]; }).length;
@@ -230,37 +284,34 @@
     $('barFill').style.width = (ready.length ? doneAll * 100 / ready.length : 0) + '%';
 
     var open = S.groups.filter(function (g) { return remaining(g).length; });
-    var closed = S.groups.filter(function (g) { return !remaining(g).length; });
     open.sort(function (a, b) {
       if (a.key === S.active) return -1; if (b.key === S.active) return 1;
-      return remaining(b).length - remaining(a).length || (a.title_zh < b.title_zh ? -1 : 1);
+      return remaining(b).length - remaining(a).length || (title(a) < title(b) ? -1 : 1);
     });
     var html = '';
     if (open.length) {
-      html += '<h2>拣货单 Pick list — 先把这些拿到桌上 · bring these to the table</h2><div class="pick">' + open.map(function (g) {
+      html += '<h2>' + esc(t('pick')) + '</h2><div class="pick">' + open.map(function (g) {
         return '<button class="pill" data-goto="' + esc(g.key) + '">' + (photo(g) ? '<img src="' + photo(g) + '" alt="">' : '') +
-          '<span>' + esc(g.title_zh) + (g.colour ? ' · ' + esc(g.colour.zh) : '') + (g.units > 1 ? ' · 每单×' + g.units : '') +
+          '<span>' + esc(fullTitle(g)) + (g.units > 1 ? ' · ' + esc(t('perOrder', {n: g.units})) : '') +
           '</span><b>×' + remaining(g).length * g.units + '</b></button>';
-      }).join('') + '</div><h2>打包 Pack — 每组：打印面单 → 装箱 → 贴面单 → 扫描 · print → pack → stick → scan</h2>';
+      }).join('') + '</div><h2>' + esc(t('pack')) + '</h2>';
       html += open.map(groupHtml).join('');
-    } else if (ready.length) {
-      html += '<div class="empty">✓ 全部打包完成<br><small>Everything is packed</small></div>';
     } else {
-      html += '<div class="empty">没有待打包的订单<br><small>Nothing to pack</small></div>';
+      html += '<div class="empty">' + esc(t(ready.length ? 'allDone' : 'nothing')) + '</div>';
     }
     var packedToday = ready.filter(function (o) { return S.packed[o.key] && S.packed[o.key].at.slice(0, 10) === today(); });
     if (packedToday.length) {
-      html += '<details><summary>今日已打包 ' + packedToday.length + ' <small>Packed today</small></summary><div class="rows">' +
+      html += '<details><summary>' + esc(t('packedToday')) + ' ' + packedToday.length + '</summary><div class="rows">' +
         packedToday.sort(function (a, b) { return S.packed[a.key].at < S.packed[b.key].at ? 1 : -1; }).map(function (o) {
-          return '<div class="row"><b>' + esc(o.order_no) + '</b><span class="grow">' + esc(o.title_zh) + (o.colour ? ' · ' + esc(o.colour.zh) : '') +
+          return '<div class="row"><b>' + esc(o.order_no) + '</b><span class="grow">' + esc(fullTitle(o)) +
             ' <small>' + esc(o.country) + '</small></span><small>✓ ' + esc(S.packed[o.key].at.slice(11)) +
-            '</small><button data-reprint="' + esc(o.key) + '">重打面单 <small>Reprint</small></button><button data-undo="' + esc(o.key) + '">撤销 <small>Undo</small></button></div>';
+            '</small><button data-reprint="' + esc(o.key) + '">' + esc(t('reprint')) + '</button><button data-undo="' + esc(o.key) + '">' + esc(t('undo')) + '</button></div>';
         }).join('') + '</div></details>';
     }
     if (waiting.length) {
-      html += '<details><summary>等待面单 ' + waiting.length + ' <small>Waiting for label — 暂时不能打包</small></summary><div class="rows">' +
-        waiting.map(function (o) { return '<div class="row"><b>' + esc(o.order_no) + '</b><span class="grow">' + esc(o.title_zh) +
-          (o.colour ? ' · ' + esc(o.colour.zh) : '') + '</span><small>' + esc(o.country) + '</small></div>'; }).join('') + '</div></details>';
+      html += '<details><summary>' + esc(t('waiting')) + ' (' + waiting.length + ')</summary><div class="rows">' +
+        waiting.map(function (o) { return '<div class="row"><b>' + esc(o.order_no) + '</b><span class="grow">' + esc(fullTitle(o)) +
+          '</span><small>' + esc(o.country) + '</small></div>'; }).join('') + '</div></details>';
     }
     $('main').innerHTML = html;
   }
@@ -268,10 +319,9 @@
     var left = remaining(g);
     return '<section class="group' + (g.key === S.active ? ' active' : '') + '" id="g-' + encodeURIComponent(g.key) + '">' +
       '<div class="g-head">' + (photo(g) ? '<img class="g-photo" src="' + photo(g) + '" alt="">' : '<div class="g-photo"></div>') +
-      '<div class="g-title"><div class="zh">' + esc(g.title_zh) + colourTag(g.colour) + unitsTag(g.units) + '</div>' +
-      '<div class="en">' + esc(g.title_en) + '</div></div>' +
-      '<div class="g-count"><b>' + left.length + '</b><small>/ ' + g.orders.length + ' 待打包</small></div>' +
-      '<button class="primary g-print" data-print="' + esc(g.key) + '">打印本组面单 ' + left.length + ' 张<small>Print ' + left.length + ' labels</small></button></div>' +
+      '<div class="g-title"><div class="zh">' + esc(title(g)) + colourTag(g.colour) + unitsTag(g.units) + '</div></div>' +
+      '<div class="g-count"><b>' + left.length + '</b><small>/ ' + g.orders.length + ' ' + esc(t('toPack')) + '</small></div>' +
+      '<button class="primary g-print" data-print="' + esc(g.key) + '">' + esc(t('print', {n: left.length})) + '</button></div>' +
       boxHtml(g.box) +
       '<div class="orders">' + g.orders.map(function (o) {
         return '<button class="ord' + (S.packed[o.key] ? ' done' : '') + '" data-ord="' + esc(o.key) + '"><b>' + esc(o.order_no) +
@@ -291,7 +341,7 @@
   // ---------- printing: one print job per group ----------
   function printOrders(list, then) {
     if (!list.length) return;
-    banner('info', '正在准备 ' + list.length + ' 张面单… <small>Preparing labels</small>');
+    banner('info', esc(t('preparing', {n: list.length})));
     Promise.all(list.map(function (o) { return fetchDecrypt('labels/' + o.label + '.bin'); })).then(function (bufs) {
       var urls = bufs.map(function (b) { return URL.createObjectURL(new Blob([b], {type: 'image/png'})); });
       var frame = $('printFrame');
@@ -309,17 +359,16 @@
         '.p{width:100mm;height:100mm;page-break-after:always;break-after:page;overflow:hidden}.p:last-child{page-break-after:auto;break-after:auto}' +
         'img{width:100mm;height:100mm;object-fit:contain;display:block}</style></head><body>' +
         urls.map(function (u) { return '<div class="p"><img src="' + u + '"></div>'; }).join('') + '</body></html>';
-    }).catch(function () { banner('bad', '面单读取失败', 'Could not load the labels — 请刷新 Refresh'); sound.bad(); });
+    }).catch(function () { banner('bad', esc(t('loadFail')), esc(t('loadFailSub'))); sound.bad(); });
   }
   function printGroup(key) {
-    var g = S.groups.filter(function (x) { return x.key === key; })[0]; if (!g) return;
+    var g = groupOf(key); if (!g) return;
     var left = remaining(g);
     printOrders(left, function () {
       setActive(key); render();
       var el = document.getElementById('g-' + encodeURIComponent(key));
       if (el) el.scrollIntoView({behavior: 'smooth', block: 'center'});
-      banner('info', '已发送 ' + left.length + ' 张面单到打印机 · 装箱 → 贴面单 → 扫描',
-        'Sent ' + left.length + ' labels to the printer. Pack, stick the label, scan it.');
+      banner('info', esc(t('sent', {n: left.length})), esc(t('sentSub')));
       focusScan();
     });
   }
@@ -340,55 +389,52 @@
   function handle(raw) {
     var o = find(raw);
     $('scan').value = '';
-    if (!o) { banner('bad', '✕ 找不到这个条码', 'Not found: ' + esc(raw.trim()) + ' — 请扫描面单上的条码 · scan the label barcode'); sound.bad(); return; }
+    if (!o) { banner('bad', esc(t('notFound')), esc(t('notFoundSub', {c: raw.trim()}))); sound.bad(); return; }
     if (S.packed[o.key]) {
-      banner('warn', '⚠ ' + esc(o.order_no) + ' 已经打包过', 'Already packed at ' + esc(S.packed[o.key].at.slice(11)));
+      banner('warn', esc(t('already', {o: o.order_no})), esc(t('alreadySub', {t: S.packed[o.key].at.slice(11)})));
       sound.warn(); return;
     }
     if (S.active && o.group !== S.active) {
-      var cur = S.groups.filter(function (g) { return g.key === S.active; })[0];
-      banner('bad', '✕ 面单不属于当前组！请检查包裹', 'This label (' + esc(o.order_no) + ') is for: ' + esc(o.title_zh) +
-        (o.colour ? ' · ' + esc(o.colour.zh) : '') + ' — current group: ' + esc(cur ? cur.title_zh + (cur.colour ? ' · ' + cur.colour.zh : '') : ''),
-        '<button data-force="' + esc(o.key) + '">仍标记已打包 <small>Mark anyway</small></button>');
+      var cur = groupOf(S.active);
+      banner('bad', esc(t('wrong')), esc(t('wrongSub', {o: o.order_no, g: fullTitle(o), c: cur ? fullTitle(cur) : ''})),
+        '<button data-force="' + esc(o.key) + '">' + esc(t('anyway')) + '</button>');
       sound.bad(); return;
     }
     markPacked(o);
   }
   function markPacked(o) {
     S.packed[o.key] = {at: now()}; store.set('packed', S.packed);
-    var g = S.groups.filter(function (x) { return x.key === o.group; })[0];
+    var g = groupOf(o.group);
     var left = g ? remaining(g).length : 0;
     if (g && !left && S.active === g.key) setActive(null);
     render();
-    banner('ok', '✓ ' + esc(o.order_no) + ' 已打包' + (g && !left ? ' · 本组完成！' : ' · 本组还剩 ' + left),
-      esc(o.title_zh) + (o.colour ? ' · ' + esc(o.colour.zh) : '') + ' — ' + esc(o.country) + (g && !left ? ' · Group done' : ' · ' + left + ' left in this group'),
-      '<button data-undo="' + esc(o.key) + '">撤销 <small>Undo</small></button>');
+    banner('ok', esc(t('packedMsg', {o: o.order_no})) + esc(g && !left ? t('groupDone') : t('left', {n: left})),
+      esc(fullTitle(o)) + ' — ' + esc(o.country),
+      '<button data-undo="' + esc(o.key) + '">' + esc(t('undo')) + '</button>');
     sound.ok();
   }
   function undo(key) {
     delete S.packed[key]; store.set('packed', S.packed); render();
-    banner('info', '已撤销 · Undone'); focusScan();
+    banner('info', esc(t('undone'))); focusScan();
   }
 
   // ---------- small menu for an order chip ----------
   function openMenu(key, el) {
-    var o = S.orders.filter(function (x) { return x.key === key; })[0]; if (!o) return;
+    var o = orderOf(key); if (!o) return;
     var m = $('menu'), r = el.getBoundingClientRect();
     m.innerHTML = '<div style="padding:4px 8px"><b>' + esc(o.order_no) + '</b> <small>' + esc(o.country) + ' · ' + esc(o.tracking) + '</small></div>' +
-      '<button data-reprint="' + esc(key) + '">重打面单 <small>Reprint label</small></button>' +
-      (S.packed[key] ? '<button data-undo="' + esc(key) + '">撤销打包 <small>Undo packed</small></button>'
-                     : '<button data-force="' + esc(key) + '">标记已打包（条码坏了）<small>Mark packed — barcode unreadable</small></button>');
+      '<button data-reprint="' + esc(key) + '">' + esc(t('reprint')) + '</button>' +
+      (S.packed[key] ? '<button data-undo="' + esc(key) + '">' + esc(t('undoPacked')) + '</button>'
+                     : '<button data-force="' + esc(key) + '">' + esc(t('markBroken')) + '</button>');
     m.style.left = Math.min(r.left, innerWidth - 300) + 'px'; m.style.top = (r.bottom + 6) + 'px';
     m.className = 'show';
   }
   function closeMenu() { $('menu').className = ''; }
-
   function focusScan() { $('scan').focus(); }
 
   // ---------- events ----------
   var scan = $('scan'), composing = false;
-  scan.addEventListener('compositionstart', function () { composing = true;
-    banner('warn', '请切换到英文输入法（按 Shift）', 'Chinese input method is on — press Shift, then scan again'); });
+  scan.addEventListener('compositionstart', function () { composing = true; banner('warn', esc(t('ime')), esc(t('imeSub'))); });
   scan.addEventListener('compositionend', function () { composing = false; tryAuto(); });
   scan.addEventListener('input', function () { if (!composing) tryAuto(); });
   function tryAuto() {
@@ -400,17 +446,18 @@
     if (e.key === 'Enter' && !e.isComposing && scan.value.trim()) { e.preventDefault(); handle(scan.value); }
   });
   document.addEventListener('click', function (e) {
-    var t = e.target.closest('button');
+    var b = e.target.closest('button');
     if (!e.target.closest('#menu')) closeMenu();
-    if (t) {
-      if (t.dataset.print) printGroup(t.dataset.print);
-      else if (t.dataset.ord) { openMenu(t.dataset.ord, t); return; }
-      else if (t.dataset.reprint) { closeMenu(); var o = S.orders.filter(function (x) { return x.key === t.dataset.reprint; })[0];
-        if (o) printOrders([o], function () { banner('info', '已重打 ' + esc(o.order_no) + ' 的面单', 'Label reprinted'); }); }
-      else if (t.dataset.undo) { closeMenu(); undo(t.dataset.undo); }
-      else if (t.dataset.force) { closeMenu(); var f = S.orders.filter(function (x) { return x.key === t.dataset.force; })[0]; if (f) markPacked(f); }
-      else if (t.dataset.goto) { var el = document.getElementById('g-' + encodeURIComponent(t.dataset.goto)); if (el) el.scrollIntoView({behavior: 'smooth', block: 'start'}); }
-      else if (t.id === 'refresh') load();
+    if (b) {
+      if (b.dataset.print) printGroup(b.dataset.print);
+      else if (b.dataset.ord) { openMenu(b.dataset.ord, b); return; }
+      else if (b.dataset.reprint) { closeMenu(); var o = orderOf(b.dataset.reprint);
+        if (o) printOrders([o], function () { banner('info', esc(t('reprinted', {o: o.order_no}))); }); }
+      else if (b.dataset.undo) { closeMenu(); undo(b.dataset.undo); }
+      else if (b.dataset.force) { closeMenu(); var f = orderOf(b.dataset.force); if (f) markPacked(f); }
+      else if (b.dataset.goto) { var el = document.getElementById('g-' + encodeURIComponent(b.dataset.goto)); if (el) el.scrollIntoView({behavior: 'smooth', block: 'start'}); }
+      else if (b.id === 'refresh') load();
+      else if (b.id === 'lang') { S.lang = zh() ? 'en' : 'zh'; store.set('lang', S.lang); render(); }
     }
     if (!e.target.closest('input, summary')) focusScan();
   });
@@ -423,9 +470,10 @@
     if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) focusScan();
   });
 
-  if (!window.crypto || !crypto.subtle) { $('main').innerHTML = '<div class="empty">请使用最新版 Chrome<br><small>Please use a recent Chrome</small></div>'; return; }
+  staticText();
+  if (!window.crypto || !crypto.subtle) { $('main').innerHTML = '<div class="empty">' + esc(t('chrome')) + '</div>'; return; }
   getKey().then(function (k) { S.key = k; return load(); })
-    .catch(function () { $('main').innerHTML = '<div class="empty">链接无效<br><small>Link not valid</small></div>'; });
+    .catch(function () { $('main').innerHTML = '<div class="empty">' + esc(t('noKey')) + '</div>'; });
   setInterval(function () { if (!document.hidden && S.key) load(); }, 300000);
 })();
 </script>
